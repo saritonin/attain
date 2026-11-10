@@ -1,6 +1,6 @@
 # ATTAIN
 These are scripts to help ATTAIN lab coordinators manage participant information.
-They are intended to be run on client-side within the browser by using a tool like [Tampermonkey](https://www.tampermonkey.net/).
+They are intended to be run on client-side within the browser by using a tool like [Tampermonkey](https://www.tampermonkey.net/). Once you have Tampermonkey, the easiest way to install these and keep them up-to-date with any improvements is to use [my GreasyFork page](https://greasyfork.org/en/users/1662642-saritonin) to add them to your Tampermonkey.
 
 ## SUNY ATTAIN Form Warnings
 This script lets us make rules that cause specific warnings (orange) or errors (red) to display next to form fields in the participant details page. The current list of rules is:
