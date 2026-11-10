@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Generate RRF
 // @namespace    https://learn.sunyattain.org/
-// @version      1.4
-// @description  Fill the ATTAIN Resource Request Form template from #mform1 and download it
+// @version      1.5
+// @description  Fill the ATTAIN Resource Request Form template and download it
 // @match        https://learn.sunyattain.org/local/user/index.php*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=sunyattain.org
 // @grant        GM_xmlhttpRequest
@@ -22,7 +22,6 @@
     `https://docs.google.com/spreadsheets/d/${FILE_ID}/export?format=xlsx`
   ];
   const BUTTON_BOTTOM_PX = 60;
-  const TARGET_ROW = 10;
 
   const KEY_OPTIONS = [
     { label: 'Spark',                       F: 'Spark', I: 'Learnkey' },
@@ -39,6 +38,41 @@
     ['Non',          'Non-TANF']
   ];
 
+  const DEPARTMENT_MAP = {
+    BERRY:   'Berry Houses Community Center',
+    BMHA:    'BMHA Martha Mitchell Center',
+    BXEOC:   'Bronx EOC',
+    BKEOC:   'Brooklyn EOC',
+    BUL:     'Broome County',
+    BFEOC:   'Buffalo EOC',
+    CSCC:    'Capital District Albany EOC',
+    TROY:    'Capital District Troy EOC',
+    BCH:     'Carlisle Hills Community Center',
+    SHABAZZ: 'Dr. Betty Shabazz',
+    DREW:    'Drew Hamilton community Center',
+    ELM:     'ELMCOR',
+    FAR:     'Far Rockaway Community Center',
+    GMHC:    'GMHC',
+    HBB:     'Hector B. Basora',
+    HSS:     'Henry St. Settlement',
+    RCB:     'Loretta C. Scott Center',
+    BWD:     'LIEOC Brentwood',
+    MEOC:    'Manhattan EOC',
+    MVCC:    'Mohawk Valley',
+    MLK:     'MLK Center',
+    NFHA:    'Niagara Falls HA',
+    NBCCC:   'North Bronx CCOC',
+    PG:      'Polo Grounds Community Center',
+    QEOC:    'Queens EOC',
+    REOC:    'Rochester EOC',
+    SOC:     'Schenectady Outreach Center',
+    SJP:     "St. John's Place",
+    MONT:    'Sullivan County',
+    SEOC:    'Syracuse EOC',
+    ARM:     'The Armory Foundation',
+    WEOC:    'Westchester EOC'
+  };
+
   const log = (...a) => console.log('[RRF]', ...a);
 
   // ---------- UI ----------
@@ -50,9 +84,8 @@
     btn.textContent = 'Generate RRF';
     Object.assign(btn.style, {
       position: 'fixed', right: '20px', bottom: BUTTON_BOTTOM_PX + 'px', zIndex: 99999,
-      padding: '10px 18px', background: '#0f6cbd', color: '#fff', border: 'none',
-      borderRadius: '6px', font: '600 14px sans-serif', cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,.3)'
+      padding: '8px 12px', background: '#0f6cbf', color: '#fff', border: 'none',
+      borderRadius: '4px', cursor: 'pointer'
     });
     btn.addEventListener('click', onGenerate);
     document.body.appendChild(btn);
@@ -85,7 +118,7 @@
         b.textContent = opt.label;
         Object.assign(b.style, {
           display: 'block', width: '100%', margin: '6px 0', padding: '8px 12px',
-          border: '1px solid #0f6cbd', background: '#fff', color: '#0f6cbd',
+          border: '1px solid #0f6cbf', background: '#fff', color: '#0f6cbf',
           borderRadius: '4px', cursor: 'pointer', font: '14px sans-serif', textAlign: 'left'
         });
         b.addEventListener('click', () => close(opt));
@@ -128,6 +161,10 @@
     return '';
   }
 
+  function mapDepartment(code) {
+    return DEPARTMENT_MAP[String(code).trim().toUpperCase()] || '';
+  }
+
   // ---------- Template download ----------
   function gmGet(url) {
     return new Promise((resolve, reject) => {
@@ -167,10 +204,39 @@
     return n;
   }
 
+  function colName(n) {
+    let s = '';
+    while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+    return s;
+  }
+
   const attr = (tag, name) => {
     const m = tag.match(new RegExp('\\s' + name + '="([^"]*)"'));
     return m ? m[1] : null;
   };
+
+  const splitAddr = a => { const m = a.match(/^([A-Z]+)(\d+)$/); return { col: m[1], row: parseInt(m[2], 10) }; };
+
+  // If addr lies inside a merged range, return that range's top-left cell
+  function resolveMergeMaster(xml, addr) {
+    const s = xml.indexOf('<mergeCells');
+    if (s === -1) return addr;
+    const e = xml.indexOf('</mergeCells>', s);
+    const block = xml.slice(s, e === -1 ? xml.length : e);
+    const { col, row } = splitAddr(addr);
+    const c = colNum(col);
+    const re = /<mergeCell\b[^>]*\bref="([A-Z]+)(\d+):([A-Z]+)(\d+)"/g;
+    let m;
+    while ((m = re.exec(block))) {
+      const c1 = colNum(m[1]), r1 = +m[2], c2 = colNum(m[3]), r2 = +m[4];
+      if (c >= c1 && c <= c2 && row >= r1 && row <= r2) {
+        const master = colName(c1) + r1;
+        if (master !== addr) log(`${addr} is inside merge ${m[1]}${m[2]}:${m[3]}${m[4]}; writing to ${master}`);
+        return master;
+      }
+    }
+    return addr;
+  }
 
   function parseCells(inner) {
     const cells = [];
@@ -203,7 +269,7 @@
     return cells.map(c => c.xml).join('');
   }
 
-  function patchSheet(xml, rowNum, values) {
+  function patchSheetRow(xml, rowNum, values) {
     const sdStart = xml.indexOf('<sheetData');
     if (sdStart === -1) throw new Error('No sheetData in worksheet');
     const sdOpenEnd = xml.indexOf('>', sdStart);
@@ -233,6 +299,20 @@
     }
     const newRow = `<row r="${rowNum}">${patchRowInner('', rowNum, values)}</row>`;
     return xml.slice(0, insertAt) + newRow + xml.slice(insertAt);
+  }
+
+  // cellValues: { "C10": "text", "F6": "text", ... }
+  function patchSheet(xml, cellValues) {
+    const byRow = {};
+    for (const [addr, val] of Object.entries(cellValues)) {
+      const master = resolveMergeMaster(xml, addr);
+      const { col, row } = splitAddr(master);
+      (byRow[row] = byRow[row] || {})[col] = val;
+    }
+    for (const row of Object.keys(byRow)) {
+      xml = patchSheetRow(xml, parseInt(row, 10), byRow[row]);
+    }
+    return xml;
   }
 
   function firstSheetPath(files) {
@@ -271,7 +351,7 @@
       if (typeof fflate === 'undefined') throw new Error('fflate library did not load');
 
       const bytes = await loadTemplate();
-      const files = fflate.unzipSync(bytes);            // synchronous
+      const files = fflate.unzipSync(bytes);
       log('unzipped', Object.keys(files).length, 'parts');
 
       const sheetPath = firstSheetPath(files);
@@ -279,19 +359,26 @@
       log('sheet part:', sheetPath);
 
       const values = {};
-      values.C = [fieldValue(form, 'firstname'), fieldValue(form, 'lastname')]
+      values.C10 = [fieldValue(form, 'firstname'), fieldValue(form, 'lastname')]
         .filter(Boolean).join(' ');
+
       const cat = mapCategory(categoryText());
-      if (cat) values.K = cat;
-      if (key.F) values.F = key.F;
-      if (key.H) values.H = key.H;
-      if (key.I) values.I = key.I;
+      if (cat) values.K10 = cat;
+
+      const deptCode = fieldValue(form, 'department');
+      const deptName = mapDepartment(deptCode);
+      if (deptName) values.F6 = deptName;
+      else log('no department mapping for value:', JSON.stringify(deptCode), '(F6 left unchanged)');
+
+      if (key.F) values.F10 = key.F;
+      if (key.H) values.H10 = key.H;
+      if (key.I) values.I10 = key.I;
       log('values:', values);
 
-      const xml = patchSheet(fflate.strFromU8(files[sheetPath]), TARGET_ROW, values);
+      const xml = patchSheet(fflate.strFromU8(files[sheetPath]), values);
       files[sheetPath] = fflate.strToU8(xml);
 
-      const out = fflate.zipSync(files, { level: 6 });  // synchronous
+      const out = fflate.zipSync(files, { level: 6 });
       const blob = new Blob([out], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
