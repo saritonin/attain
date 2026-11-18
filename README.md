@@ -35,4 +35,8 @@ Uses the data from the form to pre-fill a TANF PDF and saves it to your download
 
 ## Generate RRF
 Uses the data from the form and from a prompt to generate an RRF.<br />
-Currently only handles Troy location; can possibly be updated to read location from hidden department field.
+Currently only handles Learnkey and GED Ready requests.
+
+## GMetrix - Open IC3 GS5 Spark Details
+Adds a button to the Student details page to pop up the correct report to show their IC3 GS5 Spark progress.<br />
+Summarizes results of all Post-Assessments to show COMPLETE or INCOMPLETE status.
